@@ -4,6 +4,7 @@ import glob
 import os
 from basicsr.archs.rrdbnet_arch import RRDBNet
 from basicsr.utils.download_util import load_file_from_url
+from tqdm import tqdm
 
 from realesrgan import RealESRGANer
 from realesrgan.archs.srvgg_arch import SRVGGNetCompact
@@ -51,6 +52,22 @@ def main():
         help='Image extension. Options: auto | jpg | png, auto means using the same extension as inputs')
     parser.add_argument(
         '-g', '--gpu-id', type=int, default=None, help='gpu device to use (default=None) can be 0,1,2 for multi-gpu')
+
+    parser.add_argument(
+        '-r',
+        '--recurse',
+        action='store_true',
+        default=False,
+        help='Recurse into subfolders. Default: False',
+    )
+
+    parser.add_argument(
+        '--min_height',
+        type=int,
+        default=None,
+        help='Apply model to the image if its height is smaller than this '
+             'value. Default: None',
+    )
 
     args = parser.parse_args()
 
@@ -128,13 +145,26 @@ def main():
     if os.path.isfile(args.input):
         paths = [args.input]
     else:
-        paths = sorted(glob.glob(os.path.join(args.input, '*')))
+        if not args.recurse:
+            paths = sorted(glob.glob(os.path.join(args.input, '*')))
+        else:
+            paths = sorted(
+                glob.glob(os.path.join(args.input, '**', '*'), recursive=True),
+            )
 
-    for idx, path in enumerate(paths):
+    imgs_done = 0
+
+    for path in tqdm(paths):
         imgname, extension = os.path.splitext(os.path.basename(path))
-        print('Testing', idx, imgname)
+
+        if extension.lower() not in ('.jpg', '.jpeg', '.png'):
+            continue
 
         img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+
+        if args.min_height is not None and img.shape[0] > args.min_height:
+            continue
+
         if len(img.shape) == 3 and img.shape[2] == 4:
             img_mode = 'RGBA'
         else:
@@ -160,6 +190,9 @@ def main():
             else:
                 save_path = os.path.join(args.output, f'{imgname}_{args.suffix}.{extension}')
             cv2.imwrite(save_path, output)
+            imgs_done += 1
+
+    print(f'Processed {imgs_done} images.')
 
 
 if __name__ == '__main__':
