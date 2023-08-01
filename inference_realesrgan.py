@@ -2,8 +2,11 @@ import argparse
 import cv2
 import glob
 import os
+from datetime import datetime
+
 from basicsr.archs.rrdbnet_arch import RRDBNet
 from basicsr.utils.download_util import load_file_from_url
+from path import Path
 from tqdm import tqdm
 
 from realesrgan import RealESRGANer
@@ -22,7 +25,13 @@ def main():
         default='RealESRGAN_x4plus',
         help=('Model names: RealESRGAN_x4plus | RealESRNet_x4plus | RealESRGAN_x4plus_anime_6B | RealESRGAN_x2plus | '
               'realesr-animevideov3 | realesr-general-x4v3'))
-    parser.add_argument('-o', '--output', type=str, default='results', help='Output folder')
+    parser.add_argument(
+        '-o',
+        '--output',
+        type=str,
+        default=None,
+        help='Output folder. If None then save in the same folder',
+    )
     parser.add_argument(
         '-dn',
         '--denoise_strength',
@@ -67,6 +76,13 @@ def main():
         default=None,
         help='Apply model to the image if its height is smaller than this '
              'value. Default: None',
+    )
+
+    parser.add_argument(
+        '--save_logs',
+        action='store_true',
+        default=False,
+        help='Save paths to original and upscaled images. Default: False',
     )
 
     args = parser.parse_args()
@@ -140,7 +156,17 @@ def main():
             arch='clean',
             channel_multiplier=2,
             bg_upsampler=upsampler)
-    os.makedirs(args.output, exist_ok=True)
+
+    if args.output is not None:
+        os.makedirs(args.output, exist_ok=True)
+
+    if args.save_logs:
+        os.makedirs('logs', exist_ok=True)
+        now = datetime.now()
+        timestamp = now.strftime("%Y-%m-%d_%H:%M:%S")
+        logs_file = f'logs/upscaler_logs_{timestamp}.txt'
+    else:
+        logs_file = None
 
     if os.path.isfile(args.input):
         paths = [args.input]
@@ -185,12 +211,23 @@ def main():
                 extension = args.ext
             if img_mode == 'RGBA':  # RGBA images should be saved in png format
                 extension = 'png'
-            if args.suffix == '':
-                save_path = os.path.join(args.output, f'{imgname}.{extension}')
+
+            if args.output is None:
+                save_path = Path(path).parent
             else:
-                save_path = os.path.join(args.output, f'{imgname}_{args.suffix}.{extension}')
+                save_path = Path(args.save_path)
+
+            if args.suffix == '':
+                save_path = save_path / f'{imgname}.{extension}'
+            else:
+                save_path = save_path / f'{imgname}_{args.suffix}.{extension}'
+
             cv2.imwrite(save_path, output)
             imgs_done += 1
+
+            if logs_file:
+                with open(logs_file, 'at', encoding='utf-8') as fp:
+                    fp.write(f'{path}\n{save_path}\n')
 
     print(f'Processed {imgs_done} images.')
 
