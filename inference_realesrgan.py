@@ -220,7 +220,10 @@ def main():
             if args.suffix == '':
                 save_path = save_path / f'{imgname}.{extension}'
             else:
-                save_path = save_path / f'{imgname}_{args.suffix}.{extension}'
+                save_path = (
+                    save_path /
+                    f'{imgname}_{args.suffix}_x{args.outscale}.{extension}'
+                )
 
             cv2.imwrite(save_path, output)
             imgs_done += 1
