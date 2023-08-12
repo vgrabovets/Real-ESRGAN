@@ -234,6 +234,9 @@ def main():
 
     print(f'Processed {imgs_done} images.')
 
+    if logs_file:
+        print(f'logs saved to {Path(os.getcwd()) / logs_file}')
+
 
 if __name__ == '__main__':
     main()
