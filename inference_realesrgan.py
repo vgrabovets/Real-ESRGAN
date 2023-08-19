@@ -2,6 +2,7 @@ import argparse
 import cv2
 import glob
 import os
+import tempfile
 from datetime import datetime
 
 from basicsr.archs.rrdbnet_arch import RRDBNet
@@ -85,6 +86,13 @@ def main():
         help='Save paths to original and upscaled images. Default: False',
     )
 
+    parser.add_argument(
+        '--logs_folder',
+        type=str,
+        default=None,
+        help='Folder to save logs. Default: None - saves to tmp folder',
+    )
+
     args = parser.parse_args()
 
     # determine models according to model names
@@ -161,10 +169,14 @@ def main():
         os.makedirs(args.output, exist_ok=True)
 
     if args.save_logs:
-        os.makedirs('logs', exist_ok=True)
-        now = datetime.now()
-        timestamp = now.strftime("%Y-%m-%d_%H:%M:%S")
-        logs_file = f'logs/upscaler_logs_{timestamp}.txt'
+        if args.logs_folder:
+            logs_folder = args.logs_folder
+        else:
+            logs_folder = os.path.join(tempfile.gettempdir(), 'upscaler_logs')
+
+        os.makedirs(logs_folder, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+        logs_file = os.path.join(logs_folder, f'{timestamp}.txt')
     else:
         logs_file = None
 
