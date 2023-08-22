@@ -2,8 +2,13 @@ import argparse
 import cv2
 import glob
 import os
+import tempfile
+from datetime import datetime
+
 from basicsr.archs.rrdbnet_arch import RRDBNet
 from basicsr.utils.download_util import load_file_from_url
+from path import Path
+from tqdm import tqdm
 
 from realesrgan import RealESRGANer
 from realesrgan.archs.srvgg_arch import SRVGGNetCompact
@@ -21,7 +26,13 @@ def main():
         default='RealESRGAN_x4plus',
         help=('Model names: RealESRGAN_x4plus | RealESRNet_x4plus | RealESRGAN_x4plus_anime_6B | RealESRGAN_x2plus | '
               'realesr-animevideov3 | realesr-general-x4v3'))
-    parser.add_argument('-o', '--output', type=str, default='results', help='Output folder')
+    parser.add_argument(
+        '-o',
+        '--output',
+        type=str,
+        default=None,
+        help='Output folder. If None then save in the same folder',
+    )
     parser.add_argument(
         '-dn',
         '--denoise_strength',
@@ -51,6 +62,36 @@ def main():
         help='Image extension. Options: auto | jpg | png, auto means using the same extension as inputs')
     parser.add_argument(
         '-g', '--gpu-id', type=int, default=None, help='gpu device to use (default=None) can be 0,1,2 for multi-gpu')
+
+    parser.add_argument(
+        '-r',
+        '--recurse',
+        action='store_true',
+        default=False,
+        help='Recurse into subfolders. Default: False',
+    )
+
+    parser.add_argument(
+        '--min_height',
+        type=int,
+        default=None,
+        help='Apply model to the image if its height is smaller than this '
+             'value. Default: None',
+    )
+
+    parser.add_argument(
+        '--save_logs',
+        action='store_true',
+        default=False,
+        help='Save paths to original and upscaled images. Default: False',
+    )
+
+    parser.add_argument(
+        '--logs_folder',
+        type=str,
+        default=None,
+        help='Folder to save logs. Default: None - saves to tmp folder',
+    )
 
     args = parser.parse_args()
 
@@ -123,18 +164,45 @@ def main():
             arch='clean',
             channel_multiplier=2,
             bg_upsampler=upsampler)
-    os.makedirs(args.output, exist_ok=True)
+
+    if args.output is not None:
+        os.makedirs(args.output, exist_ok=True)
+
+    if args.save_logs:
+        if args.logs_folder:
+            logs_folder = args.logs_folder
+        else:
+            logs_folder = os.path.join(tempfile.gettempdir(), 'upscaler_logs')
+
+        os.makedirs(logs_folder, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+        logs_file = os.path.join(logs_folder, f'{timestamp}.txt')
+    else:
+        logs_file = None
 
     if os.path.isfile(args.input):
         paths = [args.input]
     else:
-        paths = sorted(glob.glob(os.path.join(args.input, '*')))
+        if not args.recurse:
+            paths = sorted(glob.glob(os.path.join(args.input, '*')))
+        else:
+            paths = sorted(
+                glob.glob(os.path.join(args.input, '**', '*'), recursive=True),
+            )
 
-    for idx, path in enumerate(paths):
+    imgs_done = 0
+
+    for path in tqdm(paths):
         imgname, extension = os.path.splitext(os.path.basename(path))
-        print('Testing', idx, imgname)
+
+        if extension.lower() not in ('.jpg', '.jpeg', '.png'):
+            continue
 
         img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+
+        if args.min_height is not None and img.shape[0] > args.min_height:
+            continue
+
         if len(img.shape) == 3 and img.shape[2] == 4:
             img_mode = 'RGBA'
         else:
@@ -155,11 +223,31 @@ def main():
                 extension = args.ext
             if img_mode == 'RGBA':  # RGBA images should be saved in png format
                 extension = 'png'
-            if args.suffix == '':
-                save_path = os.path.join(args.output, f'{imgname}.{extension}')
+
+            if args.output is None:
+                save_path = Path(path).parent
             else:
-                save_path = os.path.join(args.output, f'{imgname}_{args.suffix}.{extension}')
+                save_path = Path(args.save_path)
+
+            if args.suffix == '':
+                save_path = save_path / f'{imgname}.{extension}'
+            else:
+                save_path = (
+                    save_path /
+                    f'{imgname}_{args.suffix}_x{args.outscale}.{extension}'
+                )
+
             cv2.imwrite(save_path, output)
+            imgs_done += 1
+
+            if logs_file:
+                with open(logs_file, 'at', encoding='utf-8') as fp:
+                    fp.write(f'{path}\n{save_path}\n')
+
+    print(f'Processed {imgs_done} images.')
+
+    if logs_file:
+        print(f'logs saved to {Path(os.getcwd()) / logs_file}')
 
 
 if __name__ == '__main__':
